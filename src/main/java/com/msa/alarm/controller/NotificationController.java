@@ -5,6 +5,7 @@ import com.msa.alarm.dto.UnreadCountResponse;
 import com.msa.alarm.error.ApiException;
 import com.msa.alarm.service.NotificationService;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -19,16 +20,12 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /** /api/v1/notifications (API_SPEC §13.2). 모든 메서드에 로그인 필요 (SecurityConfig) */
 @RestController
+@RequiredArgsConstructor
 @RequestMapping("/api/v1/notifications")
 public class NotificationController {
 
     private final NotificationService service;
     private final SseHub hub;
-
-    public NotificationController(NotificationService service, SseHub hub) {
-        this.service = service;
-        this.hub = hub;
-    }
 
     // GET /api/v1/notifications?cursor=&size=
     @GetMapping

@@ -26,4 +26,9 @@ public class Notification {
     private Long eventId;
     private Boolean isRead;
     private Instant createdAt;
+
+    public void markRead(){
+        this.isRead = true;
+    }
+
 }

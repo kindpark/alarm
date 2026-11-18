@@ -10,20 +10,25 @@ import com.msa.alarm.entity.Notification;
 import com.msa.alarm.repository.NotificationRepository;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.boot.autoconfigure.info.ProjectInfoProperties;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.RequestParam;
 
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class NotificationService {
@@ -31,7 +36,7 @@ public class NotificationService {
     public static final List<String> NOTIFIABLE_TYPES =
             List.of("follow.created", "reply.created", "like.created", "repost.created");
     private final NotificationRepository notificationRepository;
-
+    private final SseHub hub;
     // 알림 페이지 띄우기
     @Transactional(readOnly = true)
     public NotificationPageResponse getPage(
@@ -41,30 +46,16 @@ public class NotificationService {
     ){
         int pageSize = Math.min(Math.max(size, 1), 10);
         // 이번 페이지의 ID를 꺼낸다.
-        List<Long> fetchedIds = notificationRepository.(userId, cursor);
+        List<Notification> fetchedIds = notificationRepository.(userId, cursor);
         // hasNext 판별 및 초과분 제거
         boolean hasNext = fetchedIds.size() > pageSize;
-        List<Long> targetIds = hasNext ? fetchedIds.subList(0, pageSize) : fetchedIds;
+        List<Notification> targetIds = hasNext ? fetchedIds.subList(0, pageSize) : fetchedIds;
         // 타겟 아이디에 알림이 없다면 빈걸 리턴
         if(targetIds.isEmpty()){
             return new NotificationPageResponse(List.of(),null);
         }
-
-        // 알림을 가져온 뒤 캐시에서 꺼낸 순서대로 재정렬
-        Map<Long, Notification> postMap = notificationRepository.findAllById(targetIds).stream()
-                .collect(Collectors.toMap(Notification::getId, Function.identity()));
-
-        // 삭제된 알림은 postMap에 없으니 자연스럽게 필터링
-        List<Notification> orderedPosts = targetIds.stream()
-                .map(postMap::get)
-                .filter(Objects::nonNull)
-                .toList();
-
-        // 좋아요 여부 일괄 조회 (N+1 방지)
-        Set<Long> likedPostIds = notificationRepository.find(targetIds, userId);
-
         // dto 변환
-        List<NotificationResponseDto> items = orderedPosts.stream()
+        List<NotificationResponseDto> items = targetIds.stream()
                 .map(notification -> NotificationResponseDto.from(notification))
                 .toList();
         // nextCursor 계산 및 반환
@@ -78,7 +69,28 @@ public class NotificationService {
     @Transactional
     @Async
     public boolean handleEvent(EventMessage evt){
+        if(!NOTIFIABLE_TYPES.contains(evt.getType()) || evt.getRecipientId() == null)
+            return false;
+        Long recipientId = evt.getRecipientId();
 
+        if(evt.getEventId() == null || evt.getEventId().isBlank()){
+            throw new IllegalArgumentException("eventId가 없는 이벤트");
+        }
+
+        Instant createdAt = (evt.getOccurredAt() != null ?
+                        evt.getOccurredAt() : OffsetDateTime.now(ZoneOffset.UTC)).toInstant();
+        Notification saved = null;
+        try{
+            saved = notificationRepository.saveAndFlush(
+                    //DTO로
+                    new Notification(recipientId, evt.getType(), evt.getActorId(), evt.getPostId(), evt.getEventId(), createdAt)
+            );
+        }catch(DataIntegrityViolationException e){
+            log.info("중복 이벤트 무시 eventId={}", evt.getEventId());
+        }
+        int delivered = hub.publish(recipientId, NotificationResponse.from(saved));
+        log.info("알림 생성 id={} type={} recipient={} sse={}", saved.getId(), saved.getType(), recipientId, delivered);
+        return true;
     }
     // 읽지않은 알림 페이지 비동기 실행
     @Transactional(readOnly = true)

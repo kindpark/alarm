@@ -23,7 +23,7 @@ public class Notification {
     private Long actorId;
     private Long postId;
     @Column(name="event_id", unique=true, nullable = false)
-    private Long eventId;
+    private String eventId;
     private Boolean isRead;
     private Instant createdAt;
 
@@ -31,4 +31,19 @@ public class Notification {
         this.isRead = true;
     }
 
+    public Notification(
+            Long recipientId,
+            String type,
+            Long actorId,
+            Long postId,
+            String eventId,
+            Instant createdAt
+    ){
+        this.recipientId = recipientId;
+        this.type = type;
+        this.actorId = actorId;
+        this.postId = postId;
+        this.eventId = eventId;
+        this.createdAt = createdAt;
+    }
 }

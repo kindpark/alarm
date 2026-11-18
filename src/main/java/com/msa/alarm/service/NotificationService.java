@@ -9,11 +9,13 @@ import com.msa.alarm.dto.UnreadCountResponse;
 import com.msa.alarm.entity.Notification;
 import com.msa.alarm.repository.NotificationRepository;
 
+import com.msa.alarm.sse.SseHub;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.boot.autoconfigure.info.ProjectInfoProperties;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Limit;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,7 +38,6 @@ public class NotificationService {
     public static final List<String> NOTIFIABLE_TYPES =
             List.of("follow.created", "reply.created", "like.created", "repost.created");
     private final NotificationRepository notificationRepository;
-    private final SseHub hub;
     // 알림 페이지 띄우기
     @Transactional(readOnly = true)
     public NotificationPageResponse getPage(
@@ -45,8 +46,11 @@ public class NotificationService {
              int size
     ){
         int pageSize = Math.min(Math.max(size, 1), 10);
+        Limit limit = Limit.of(pageSize + 1);
         // 이번 페이지의 ID를 꺼낸다.
-        List<Notification> fetchedIds = notificationRepository.(userId, cursor);
+        List<Notification> fetchedIds = (cursor==null)
+                ? notificationRepository.findByRecipientIdOrderByIdDesc(userId, limit)
+                : notificationRepository.findByRecipientIdAndIdLessThanOrderByIdDesc(userId, cursor, limit);
         // hasNext 판별 및 초과분 제거
         boolean hasNext = fetchedIds.size() > pageSize;
         List<Notification> targetIds = hasNext ? fetchedIds.subList(0, pageSize) : fetchedIds;
@@ -56,46 +60,18 @@ public class NotificationService {
         }
         // dto 변환
         List<NotificationResponseDto> items = targetIds.stream()
-                .map(notification -> NotificationResponseDto.from(notification))
+                .map(NotificationResponseDto::from)
                 .toList();
         // nextCursor 계산 및 반환
-        Long nextCursor = hasNext ? targetIds.get(targetIds.size() - 1) : null;
+        Long nextCursor = hasNext ? targetIds.get(targetIds.size() - 1).getId() : null;
 
         return new NotificationPageResponse(items, nextCursor);
     }
 
-    // 알림 발송 관련
-    @RabbitListener
-    @Transactional
-    @Async
-    public boolean handleEvent(EventMessage evt){
-        if(!NOTIFIABLE_TYPES.contains(evt.getType()) || evt.getRecipientId() == null)
-            return false;
-        Long recipientId = evt.getRecipientId();
-
-        if(evt.getEventId() == null || evt.getEventId().isBlank()){
-            throw new IllegalArgumentException("eventId가 없는 이벤트");
-        }
-
-        Instant createdAt = (evt.getOccurredAt() != null ?
-                        evt.getOccurredAt() : OffsetDateTime.now(ZoneOffset.UTC)).toInstant();
-        Notification saved = null;
-        try{
-            saved = notificationRepository.saveAndFlush(
-                    //DTO로
-                    new Notification(recipientId, evt.getType(), evt.getActorId(), evt.getPostId(), evt.getEventId(), createdAt)
-            );
-        }catch(DataIntegrityViolationException e){
-            log.info("중복 이벤트 무시 eventId={}", evt.getEventId());
-        }
-        int delivered = hub.publish(recipientId, NotificationResponse.from(saved));
-        log.info("알림 생성 id={} type={} recipient={} sse={}", saved.getId(), saved.getType(), recipientId, delivered);
-        return true;
-    }
     // 읽지않은 알림 페이지 비동기 실행
     @Transactional(readOnly = true)
     public UnreadCountResponse countUnread(Long userId){
-        return new UnreadCountResponse(notificationRepository.countByRecipientIdAndReadFalse(userId));
+        return new UnreadCountResponse(notificationRepository.countByRecipientIdAndIsReadFalse(userId));
     }
 
     // 읽은걸 체크하는걸 비동기 실행
@@ -105,6 +81,7 @@ public class NotificationService {
     }
 
     // 읽은걸 체크
+    @Transactional
     public boolean markRead(Long userId, Long notificationId){
         return notificationRepository.findByIdAndRecipientId(notificationId, userId)
                 .map(n->{

@@ -9,7 +9,7 @@ import lombok.NoArgsConstructor;
 import java.time.Instant;
 
 @Entity
-@Table(name="notification_db")
+@Table(name="notifications")
 @Getter
 @AllArgsConstructor
 @NoArgsConstructor
@@ -24,7 +24,8 @@ public class Notification {
     private Long postId;
     @Column(name="event_id", unique=true, nullable = false)
     private String eventId;
-    private Boolean isRead;
+    @Column(nullable = false)
+    private boolean isRead;
     private Instant createdAt;
 
     public void markRead(){
@@ -45,5 +46,6 @@ public class Notification {
         this.postId = postId;
         this.eventId = eventId;
         this.createdAt = createdAt;
+        this.isRead = false;
     }
 }

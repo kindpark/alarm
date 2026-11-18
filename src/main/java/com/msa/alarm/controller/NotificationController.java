@@ -1,14 +1,16 @@
 package com.msa.alarm.controller;
 
+import com.msa.alarm.common.BusinessException;
+import com.msa.alarm.common.ErrorCode;
 import com.msa.alarm.dto.NotificationPageResponse;
 import com.msa.alarm.dto.UnreadCountResponse;
-import com.msa.alarm.error.ApiException;
 import com.msa.alarm.service.NotificationService;
+import com.msa.alarm.sse.SseHub;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -29,8 +31,7 @@ public class NotificationController {
 
     // GET /api/v1/notifications?cursor=&size=
     @GetMapping
-    public NotificationPageResponse getPage(
-            @CurrentUser Long userId,
+    public NotificationPageResponse getPage(@AuthenticationPrincipal Long userId,
             @RequestParam(required = false) Long cursor,
             @RequestParam(defaultValue = "20") int size) {
         return service.getPage(userId, cursor, size);
@@ -38,29 +39,29 @@ public class NotificationController {
 
     // GET /api/v1/notifications/unread-count
     @GetMapping("/unread-count")
-    public UnreadCountResponse countUnread(@CurrentUser Long userId) {
+    public UnreadCountResponse countUnread(@AuthenticationPrincipal Long userId) {
         return service.countUnread(userId);
     }
 
     // POST /api/v1/notifications/read-all → 204
     @PostMapping("/read-all")
-    public ResponseEntity<Void> markAllRead(@CurrentUser Long userId) {
+    public ResponseEntity<Void> markAllRead(@AuthenticationPrincipal Long userId) {
         service.markAllRead(userId);
         return ResponseEntity.noContent().build();
     }
 
     // PATCH /api/v1/notifications/{id}/read → 204, 남의 알림이면 404
     @PatchMapping("/{id}/read")
-    public ResponseEntity<Void> markRead(@CurrentUser Long userId, @PathVariable long id) {
+    public ResponseEntity<Void> markRead(@AuthenticationPrincipal Long userId, @PathVariable long id) {
         if (!service.markRead(userId, id)) {
-            throw new ApiException(HttpStatus.NOT_FOUND, "NOTIFICATION_NOT_FOUND", "존재하지 않는 알림입니다.");
+            throw new BusinessException(ErrorCode.UNKNOWN_NOTIFICATION);
         }
         return ResponseEntity.noContent().build();
     }
 
     // GET /api/v1/notifications/subscribe — SSE (API_SPEC §13.3)
     @GetMapping(value = "/subscribe", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter subscribe(@CurrentUser Long userId, HttpServletResponse response) {
+    public SseEmitter subscribe(@AuthenticationPrincipal Long userId, HttpServletResponse response) {
         response.setHeader("Cache-Control", "no-cache");
         response.setHeader("X-Accel-Buffering", "no"); // nginx 버퍼링 방지
         return hub.subscribe(userId);

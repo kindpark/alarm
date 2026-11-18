@@ -34,8 +34,7 @@ public class NotificationResponseDto {
                 .actorId(entity.getActorId())
                 .postId(entity.getPostId())
                 .createdAt(entity.getCreatedAt())
-                // 엔티티의 isRead 는 Boolean 이라 null 일 수 있다. null 이면 안 읽은 것으로 본다
-                .read(Boolean.TRUE.equals(entity.getIsRead()))
+                .read(entity.isRead())
                 .build();
     }
 }

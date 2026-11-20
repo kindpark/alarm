@@ -1,42 +1,26 @@
 package com.msa.alarm.service;
 
-import com.msa.alarm.common.BusinessException;
-import com.msa.alarm.common.ErrorCode;
-import com.msa.alarm.dto.EventMessage;
+import com.msa.alarm.config.RabbitMQConfig;
 import com.msa.alarm.dto.NotificationPageResponse;
 import com.msa.alarm.dto.NotificationResponseDto;
 import com.msa.alarm.dto.UnreadCountResponse;
 import com.msa.alarm.entity.Notification;
 import com.msa.alarm.repository.NotificationRepository;
 
-import com.msa.alarm.sse.SseHub;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.amqp.rabbit.annotation.RabbitListener;
-import org.springframework.boot.autoconfigure.info.ProjectInfoProperties;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Limit;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.bind.annotation.RequestParam;
 
-import java.time.Instant;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class NotificationService {
     /** 알림을 만드는 이벤트 (API_SPEC §9.1 큐 바인딩과 같음) */
     public static final List<String> NOTIFIABLE_TYPES =
-            List.of("follow.created", "reply.created", "like.created", "repost.created");
+            RabbitMQConfig.ROUTING_KEYS;
     private final NotificationRepository notificationRepository;
     // 알림 페이지 띄우기
     @Transactional(readOnly = true)
@@ -89,5 +73,9 @@ public class NotificationService {
                     return true;
                 })
                 .orElse(false);
+    }
+    @Transactional
+    public void deletedUsersAlarm(Long userId){
+        notificationRepository.deletedAlarm(userId);
     }
 }

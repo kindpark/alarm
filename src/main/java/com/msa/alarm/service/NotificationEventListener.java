@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -22,11 +23,18 @@ import java.util.Objects;
 public class NotificationEventListener {
 
     private final NotificationRepository notificationRepository;
+    private final NotificationService notificationService;
     private final SseHub hub;
 
     @RabbitListener(queues = "${rabbitmq.queue.name}") // 실제 큐 이름 또는 프로퍼티 지정 필요
     public void handleEvent(EventMessage evt) {
-        if (!NotificationService.NOTIFIABLE_TYPES.contains(evt.getType()) || evt.getRecipientId() == null) {
+        if(evt.getType().equals("user.deleted")){
+            notificationService.deletedUsersAlarm(evt.getActorId());
+            return;
+        }
+        if (!NotificationService.NOTIFIABLE_TYPES.contains(
+                evt.getType())
+                || evt.getRecipientId() == null) {
             return;
         }
         if(Objects.equals(evt.getActorId(), evt.getRecipientId())){

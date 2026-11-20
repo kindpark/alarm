@@ -27,9 +27,16 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
     Optional<Notification> findByIdAndRecipientId(Long id, Long recipientId);
 
     // 한번의 업데이트로 모두 읽음 처리함
-    @Modifying(clearAutomatically = true)
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("update Notification n set n.isRead = true" +
             " where n.recipientId = :recipientId" +
             " and n.isRead = false")
     int markAllRead(@Param("recipientId") Long recipientId);
+
+    // 유저 탈퇴할때 알림들을 삭제
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("delete Notification n" +
+            " where n.recipientId = :userId" +
+            " or n.actorId = :userId")
+    void deletedAlarm(@Param("userId") Long userId);
 }

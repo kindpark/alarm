@@ -8,6 +8,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
@@ -57,6 +58,15 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<ErrorResponse> handleNotFound(NoResourceFoundException e) {
         return toResponse(ErrorResponse.of(ErrorCode.NOT_FOUND));
+    }
+
+    /**
+     * SSE 연결이 브라우저 쪽에서 이미 끊긴 뒤 ping·알림을 보내려 할 때 난다 (탭 닫기, 새로고침).
+     * 정상적인 상황이고 응답을 쓸 곳도 없으므로(이미 text/event-stream) 아무것도 쓰지 않고 debug 로만 남긴다.
+     */
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public void handleClientGone(AsyncRequestNotUsableException e) {
+        log.debug("SSE 클라이언트 연결 끊김: {}", e.getMessage());
     }
 
     /** 그 밖의 예상하지 못한 예외: 원인은 로그에만 남기고 응답에는 일반 메시지만 보낸다 */
